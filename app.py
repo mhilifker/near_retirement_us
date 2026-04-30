@@ -33,7 +33,7 @@ if 'ann_apprec' not in st.session_state: st.session_state.ann_apprec = 2.0
 # Social Security Macros
 if 'steven_ss_age' not in st.session_state: st.session_state.steven_ss_age = 70
 if 'steven_future_pct' not in st.session_state: st.session_state.steven_future_pct = 80 
-if 'ilona_current_ss' not in st.session_state: st.session_state.ilona_current_ss = 24000 # Default $2k/mo
+if 'ilona_current_ss' not in st.session_state: st.session_state.ilona_current_ss = 24000 
 if 'trust_fund_haircut' not in st.session_state: st.session_state.trust_fund_haircut = 0 
 if 'cola_rate' not in st.session_state: st.session_state.cola_rate = 2.1
 if 'awi_rate' not in st.session_state: st.session_state.awi_rate = 3.5
@@ -52,11 +52,11 @@ if 'steven_history_df' not in st.session_state:
     })
 
 # Spending Targets & Guardrails
-if 'spend_active' not in st.session_state: st.session_state.spend_active = 120000
-if 'spend_slow' not in st.session_state: st.session_state.spend_slow = 90000
+if 'spend_active' not in st.session_state: st.session_state.spend_active = 100000
+if 'spend_slow' not in st.session_state: st.session_state.spend_slow = 110000
 if 'guardrails_enable' not in st.session_state: st.session_state.guardrails_enable = True
 if 'floor_active' not in st.session_state: st.session_state.floor_active = 85000
-if 'floor_slow' not in st.session_state: st.session_state.floor_slow = 70000
+if 'floor_slow' not in st.session_state: st.session_state.floor_slow = 100000
 if 'slash_trigger' not in st.session_state: st.session_state.slash_trigger = 5.25
 if 'recovery_trigger' not in st.session_state: st.session_state.recovery_trigger = 4.25
 if 'raise_pct' not in st.session_state: st.session_state.raise_pct = 33.0
@@ -299,7 +299,7 @@ if selection == "1. Executive Dashboard":
     c1, c2, c3 = st.columns(3)
     st.session_state.ret_age = c1.number_input("Steven Retirement Age", value=st.session_state.ret_age)
     st.session_state.downsize_yr = c2.number_input("Year to Sell Glenview Home", value=st.session_state.downsize_yr)
-    st.session_state.spend_active = c3.number_input("Target Annual Spend (Active Years $)", value=st.session_state.spend_active, step=5000)
+    st.session_state.spend_active = c3.number_input("Target Annual Spend (Active Phase $)", value=st.session_state.spend_active, step=5000)
 
     df_bal, df_draw, df_tax, wr_series = run_core_simulation()
     inf_rate = st.session_state.inflation_rate / 100.0
@@ -397,6 +397,10 @@ elif selection == "3. Investment Policy Editor":
     c1, c2 = st.columns(2)
     st.session_state.inflation_rate = c1.number_input("Annual Inflation (%)", value=st.session_state.inflation_rate, step=0.1)
     st.session_state.usd_market_return = c2.number_input("USD Asset Base Return (%)", value=st.session_state.usd_market_return, step=0.1)
+
+    st.markdown("---")
+    st.subheader("Real Estate Assumptions")
+    st.session_state.home_price = st.number_input("Glenview Home Sale Price (Current Value $)", value=st.session_state.home_price, step=10000)
     
     st.markdown("---")
     st.subheader("Tax Assumptions (Federal Only)")
