@@ -11,8 +11,8 @@ from plotly.subplots import make_subplots
 st.set_page_config(page_title="Glenview Retirement Dashboard", layout="wide")
 
 # Initialize Master Inputs
-if 'father_age' not in st.session_state: st.session_state.father_age = 68
-if 'mother_age' not in st.session_state: st.session_state.mother_age = 67
+if 'steven_age' not in st.session_state: st.session_state.steven_age = 68
+if 'ilona_age' not in st.session_state: st.session_state.ilona_age = 67
 if 'ret_age' not in st.session_state: st.session_state.ret_age = 70 
 if 'downsize_yr' not in st.session_state: st.session_state.downsize_yr = 2031 
 if 'inflation_rate' not in st.session_state: st.session_state.inflation_rate = 3.0
@@ -31,19 +31,19 @@ if 'ann_insurance' not in st.session_state: st.session_state.ann_insurance = 250
 if 'ann_apprec' not in st.session_state: st.session_state.ann_apprec = 2.0
 
 # Social Security Macros
-if 'father_ss_age' not in st.session_state: st.session_state.father_ss_age = 70
-if 'mother_ss_age' not in st.session_state: st.session_state.mother_ss_age = 70
-if 'father_future_pct' not in st.session_state: st.session_state.father_future_pct = 80 
-if 'mother_future_pct' not in st.session_state: st.session_state.mother_future_pct = 80 
+if 'steven_ss_age' not in st.session_state: st.session_state.steven_ss_age = 70
+if 'steven_future_pct' not in st.session_state: st.session_state.steven_future_pct = 80 
+if 'ilona_current_ss' not in st.session_state: st.session_state.ilona_current_ss = 24000 # Default $2k/mo
 if 'trust_fund_haircut' not in st.session_state: st.session_state.trust_fund_haircut = 0 
 if 'cola_rate' not in st.session_state: st.session_state.cola_rate = 2.1
 if 'awi_rate' not in st.session_state: st.session_state.awi_rate = 3.5
 
-# Placeholder Earnings Histories for AIME/PIA Math
-if 'father_history' not in st.session_state:
-    st.session_state.father_history = {yr: 110000 for yr in range(1980, 2026)}
-if 'mother_history' not in st.session_state:
-    st.session_state.mother_history = {yr: 70000 for yr in range(1980, 2026)}
+# Editable SSA Earnings History for Steven
+if 'steven_history_df' not in st.session_state:
+    st.session_state.steven_history_df = pd.DataFrame({
+        "Year": list(range(1980, 2026)),
+        "Earnings": [110000] * 46
+    })
 
 # Spending Targets & Guardrails
 if 'spend_active' not in st.session_state: st.session_state.spend_active = 120000
@@ -69,10 +69,10 @@ if 'usd_glide_reduction' not in st.session_state: st.session_state.usd_glide_red
 if 'asset_balances' not in st.session_state:
     st.session_state.asset_balances = {
         "Taxable Brokerage": 100000,
-        "Father: Trad 401(k) / IRA": 500000,
-        "Mother: Trad 401(k) / IRA": 250000,
-        "Father: Roth IRA": 50000,
-        "Mother: Roth IRA": 50000,
+        "Steven: Trad 401(k) / IRA": 500000,
+        "Ilona: Trad 401(k) / IRA": 250000,
+        "Steven: Roth IRA": 50000,
+        "Ilona: Roth IRA": 50000,
         "Cash (Slush Fund)": 40000 
     }
 
@@ -130,13 +130,19 @@ def calculate_person_benefit(history_dict, current_age, ret_age, claim_age, futu
     return timeline
 
 def get_ss_timelines():
-    father_ss = calculate_person_benefit(st.session_state.father_history, st.session_state.father_age, st.session_state.ret_age, st.session_state.father_ss_age, st.session_state.father_future_pct, st.session_state.cola_rate, st.session_state.trust_fund_haircut, st.session_state.awi_rate)
-    mother_ss = calculate_person_benefit(st.session_state.mother_history, st.session_state.mother_age, st.session_state.ret_age, st.session_state.mother_ss_age, st.session_state.mother_future_pct, st.session_state.cola_rate, st.session_state.trust_fund_haircut, st.session_state.awi_rate)
-    return father_ss, mother_ss
+    steven_history_dict = dict(zip(st.session_state.steven_history_df["Year"], st.session_state.steven_history_df["Earnings"]))
+    steven_ss = calculate_person_benefit(
+        steven_history_dict, st.session_state.steven_age, st.session_state.ret_age, 
+        st.session_state.steven_ss_age, st.session_state.steven_future_pct, 
+        st.session_state.cola_rate, st.session_state.trust_fund_haircut, st.session_state.awi_rate
+    )
+    # Ilona is already claiming, just compound her current amount by COLA
+    ilona_ss = {yr: st.session_state.ilona_current_ss * ((1 + (st.session_state.cola_rate / 100)) ** (yr - 2026)) for yr in range(2026, 2090)}
+    return steven_ss, ilona_ss
 
 def run_core_simulation():
-    FATHER_SS, MOTHER_SS = get_ss_timelines()
-    ret_yr = 2026 + (st.session_state.ret_age - st.session_state.father_age)
+    STEVEN_SS, ILONA_SS = get_ss_timelines()
+    ret_yr = 2026 + (st.session_state.ret_age - st.session_state.steven_age)
     
     current_balances = st.session_state.asset_balances.copy()
     bal_matrix, draw_matrix, tax_matrix, wr_matrix = {}, {}, {}, {}
@@ -145,14 +151,14 @@ def run_core_simulation():
     spend_level = 1.0 
     
     for yr in range(2026, 2090):
-        father_current_age = st.session_state.father_age + (yr - 2026)
+        steven_current_age = st.session_state.steven_age + (yr - 2026)
         
         usd_yr_return = st.session_state.usd_market_return / 100.0
         i_rate = st.session_state.inflation_rate / 100.0
         
         # Institutional Stress Tests: Glide Path & SORR
-        if st.session_state.glide_enable and father_current_age >= st.session_state.glide_start_age:
-            years_in_glide = min(father_current_age, st.session_state.glide_end_age) - st.session_state.glide_start_age + 1
+        if st.session_state.glide_enable and steven_current_age >= st.session_state.glide_start_age:
+            years_in_glide = min(steven_current_age, st.session_state.glide_end_age) - st.session_state.glide_start_age + 1
             usd_yr_return -= (years_in_glide * (st.session_state.usd_glide_reduction / 100.0))
             
         if st.session_state.sorr_enable and (st.session_state.sorr_start_yr <= yr < (st.session_state.sorr_start_yr + st.session_state.sorr_duration)):
@@ -173,7 +179,7 @@ def run_core_simulation():
         current_portfolio = sum(current_balances.values())
         
         # Phase Targeting
-        if father_current_age < 80:
+        if steven_current_age < 80:
             base_spend_usd = st.session_state.spend_active
             floor_base_usd = st.session_state.floor_active
         else:
@@ -183,8 +189,8 @@ def run_core_simulation():
         target_lifestyle_usd = base_spend_usd * ((1 + i_rate) ** (yr - 2026))
         floor_usd_inflated = floor_base_usd * ((1 + i_rate) ** (yr - 2026))
         
-        ss_f, ss_m = FATHER_SS.get(yr, 0), MOTHER_SS.get(yr, 0)
-        gross_ss_usd = ss_f + ss_m
+        ss_s, ss_i = STEVEN_SS.get(yr, 0), ILONA_SS.get(yr, 0)
+        gross_ss_usd = ss_s + ss_i
         taxable_ss_usd = gross_ss_usd * 0.85 if gross_ss_usd > 0 else 0.0
         irs_shadow_tax_usd = taxable_ss_usd * (st.session_state.us_ss_tax_rate / 100.0)
         net_ss_usd = gross_ss_usd - irs_shadow_tax_usd
@@ -223,20 +229,20 @@ def run_core_simulation():
 
         if yr >= ret_yr:
             std_ded_infl = 32000 * ((1 + i_rate) ** (yr - 2026)) 
-            pull_from_asset("Father: Trad 401(k) / IRA", min(remaining_need, std_ded_infl), 0.0)
+            pull_from_asset("Steven: Trad 401(k) / IRA", min(remaining_need, std_ded_infl), 0.0)
             pull_from_asset("Taxable Brokerage", remaining_need, st.session_state.tax_cap_gains / 100.0)
-            pull_from_asset("Father: Trad 401(k) / IRA", remaining_need, st.session_state.tax_pretax_base / 100.0)
-            pull_from_asset("Mother: Trad 401(k) / IRA", remaining_need, st.session_state.tax_pretax_base / 100.0)
-            pull_from_asset("Father: Roth IRA", remaining_need, 0.0)
-            pull_from_asset("Mother: Roth IRA", remaining_need, 0.0)
+            pull_from_asset("Steven: Trad 401(k) / IRA", remaining_need, st.session_state.tax_pretax_base / 100.0)
+            pull_from_asset("Ilona: Trad 401(k) / IRA", remaining_need, st.session_state.tax_pretax_base / 100.0)
+            pull_from_asset("Steven: Roth IRA", remaining_need, 0.0)
+            pull_from_asset("Ilona: Roth IRA", remaining_need, 0.0)
             pull_from_asset("Cash (Slush Fund)", remaining_need, 0.0)
 
         total_gross_portfolio = sum(draws.values())
         total_taxes_paid = sum(taxes.values()) + irs_shadow_tax_usd
         
         d_col = draws.copy()
-        d_col["Father SS"] = ss_f
-        d_col["Mother SS"] = ss_m
+        d_col["Steven SS"] = ss_s
+        d_col["Ilona SS"] = ss_i
         d_col["Actual Lifestyle Spend"] = actual_lifestyle_usd
         d_col["Total Gross Drawn"] = total_gross_portfolio + gross_ss_usd
         d_col["IRS Tax on SS"] = -irs_shadow_tax_usd
@@ -276,7 +282,7 @@ if st.sidebar.button("🌿 Baseline (Reset)"):
     st.session_state.glide_enable = False
 if st.sidebar.button("📉 Bear Market"):
     st.session_state.sorr_enable = True
-    st.session_state.sorr_start_yr = 2026 + (st.session_state.ret_age - st.session_state.father_age)
+    st.session_state.sorr_start_yr = 2026 + (st.session_state.ret_age - st.session_state.steven_age)
     st.session_state.sorr_duration = 3
     st.session_state.sorr_return = -15.0
 
@@ -286,25 +292,26 @@ if st.sidebar.button("📉 Bear Market"):
 if selection == "1. Executive Dashboard":
     st.header("1. Executive Dashboard")
     c1, c2, c3 = st.columns(3)
-    st.session_state.ret_age = c1.number_input("Father Retirement Age", value=st.session_state.ret_age)
+    st.session_state.ret_age = c1.number_input("Steven Retirement Age", value=st.session_state.ret_age)
     st.session_state.downsize_yr = c2.number_input("Year to Sell Glenview Home", value=st.session_state.downsize_yr)
     st.session_state.spend_active = c3.number_input("Target Annual Spend (Active Years $)", value=st.session_state.spend_active, step=5000)
 
     df_bal, df_draw, df_tax, wr_series = run_core_simulation()
+    inf_rate = st.session_state.inflation_rate / 100.0
 
     st.markdown("---")
     zero_years = df_bal.columns[df_bal.loc['Total Portfolio Balance'] <= 0]
-    longevity_age = zero_years.min() - 2026 + st.session_state.father_age if len(zero_years) > 0 else 100
+    longevity_age = zero_years.min() - 2026 + st.session_state.steven_age if len(zero_years) > 0 else 100
         
     fig_gauge = go.Figure(go.Indicator(
         mode = "gauge+number",
         value = longevity_age,
-        title = {'text': "Projected Portfolio Longevity (Father's Age)"},
+        title = {'text': "Projected Portfolio Longevity (Steven's Age)"},
         gauge = {
-            'axis': {'range': [st.session_state.father_age, 100]},
+            'axis': {'range': [st.session_state.steven_age, 100]},
             'bar': {'color': "black", 'thickness': 0.25},
             'steps': [
-                {'range': [st.session_state.father_age, 80], 'color': "rgba(255, 99, 71, 0.8)"},   
+                {'range': [st.session_state.steven_age, 80], 'color': "rgba(255, 99, 71, 0.8)"},   
                 {'range': [80, 90], 'color': "rgba(255, 165, 0, 0.8)"},      
                 {'range': [90, 95], 'color': "rgba(255, 235, 59, 0.8)"},     
                 {'range': [95, 100], 'color': "rgba(144, 238, 144, 0.8)"}    
@@ -319,6 +326,52 @@ if selection == "1. Executive Dashboard":
     fig = px.bar(chart_bals, barmode='stack')
     fig.update_layout(xaxis_title="Year", yaxis_title="Balance ($)", legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5, title=""))
     st.plotly_chart(fig, use_container_width=True)
+    
+    st.markdown("---")
+    st.subheader("Yearly Income Sources (Real 2026 $)")
+    
+    discount_factors_draw = np.array([(1 + inf_rate) ** (yr - 2026) for yr in df_draw.columns])
+    df_draw_real = df_draw.div(discount_factors_draw, axis=1)
+    
+    chart_draws = df_draw_real.T
+    
+    chart_draws['Brokerage & Cash Draw'] = chart_draws['Taxable Brokerage'] + chart_draws['Cash (Slush Fund)'] + chart_draws['Steven: Roth IRA'] + chart_draws['Ilona: Roth IRA']
+    chart_draws['Pre-Tax Draw'] = chart_draws['Steven: Trad 401(k) / IRA'] + chart_draws['Ilona: Trad 401(k) / IRA']
+    chart_draws['Social Security'] = chart_draws["Steven SS"] + chart_draws["Ilona SS"]
+    
+    fig2 = make_subplots(specs=[[{"secondary_y": True}]])
+    
+    fig2.add_trace(go.Bar(x=chart_draws.index, y=chart_draws['Brokerage & Cash Draw'], name='Brokerage, Roth & Cash Draw'), secondary_y=False)
+    fig2.add_trace(go.Bar(x=chart_draws.index, y=chart_draws['Pre-Tax Draw'], name='Pre-Tax Draw'), secondary_y=False)
+    fig2.add_trace(go.Bar(x=chart_draws.index, y=chart_draws['Social Security'], name='Social Security'), secondary_y=False)
+    
+    fig2.add_trace(go.Scatter(
+        x=chart_draws.index, 
+        y=chart_draws['Actual Lifestyle Spend'], 
+        name="Post-Tax Lifestyle Spend", 
+        mode='lines+markers', 
+        line=dict(color='red', width=3)
+    ), secondary_y=False)
+
+    wr_plot_data = wr_series * 100 
+    fig2.add_trace(go.Scatter(
+        x=wr_plot_data.index,
+        y=wr_plot_data.values,
+        name="Gross Withdrawal Rate %",
+        mode='lines',
+        line=dict(color='#00FF00', width=2)
+    ), secondary_y=True)
+    
+    fig2.update_layout(
+        barmode='stack',
+        legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5, title=""), 
+        hovermode="x unified"
+    )
+    fig2.update_xaxes(title_text="Year")
+    fig2.update_yaxes(title_text="Real Income / Draw (2026 $)", secondary_y=False)
+    fig2.update_yaxes(title_text="Withdrawal Rate (%)", secondary_y=True, tickformat='.1f')
+    
+    st.plotly_chart(fig2, use_container_width=True)
 
 # -----------------------------------------------------------------------------
 # 2. PRE-SET ASSET LEDGER & TAX LOTS
@@ -360,26 +413,37 @@ elif selection == "3. Investment Policy Editor":
 # -----------------------------------------------------------------------------
 elif selection == "4. Social Security Determinations":
     st.header("4. Actuarial Social Security Engine")
-    st.sidebar.header("Retirement Timing")
-    st.session_state.father_ss_age = st.sidebar.slider("Father Claim Age", 62, 70, st.session_state.father_ss_age)
-    st.session_state.mother_ss_age = st.sidebar.slider("Mother Claim Age", 62, 70, st.session_state.mother_ss_age)
     
     st.sidebar.header("Actuarial Macros")
     st.session_state.awi_rate = st.sidebar.number_input("Average Wage Index (AWI) %", value=st.session_state.awi_rate, step=0.1)
     st.session_state.cola_rate = st.sidebar.number_input("Annual COLA (%)", value=st.session_state.cola_rate, step=0.1)
     st.session_state.trust_fund_haircut = st.sidebar.slider("Trust Fund Haircut (%)", 0, 50, st.session_state.trust_fund_haircut, 5)
 
-    FATHER_SS, MOTHER_SS = get_ss_timelines()
-    f_claim_yr = 2026 + (st.session_state.father_ss_age - st.session_state.father_age)
-    m_claim_yr = 2026 + (st.session_state.mother_ss_age - st.session_state.mother_age)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("Steven's Future Claim")
+        st.session_state.steven_ss_age = st.slider("Steven Claim Age", 62, 70, st.session_state.steven_ss_age)
+        
+        st.markdown("**Steven's Earnings Record**")
+        st.markdown("Paste earnings directly from ssa.gov below:")
+        edited_history = st.data_editor(st.session_state.steven_history_df, use_container_width=True, hide_index=True, height=400)
+        st.session_state.steven_history_df = edited_history
+
+    with c2:
+        st.subheader("Ilona's Current Benefit")
+        st.markdown("Since Ilona is already claiming, enter her current annual benefit here. It will compound automatically by the COLA rate in future years.")
+        st.session_state.ilona_current_ss = st.number_input("Ilona Annual Benefit ($)", value=st.session_state.ilona_current_ss, step=1000)
+
+    STEVEN_SS, ILONA_SS = get_ss_timelines()
+    s_claim_yr = 2026 + (st.session_state.steven_ss_age - st.session_state.steven_age)
     
     inf_rate = st.session_state.inflation_rate / 100.0
-    f_real_ss = FATHER_SS[f_claim_yr] / ((1 + inf_rate) ** (f_claim_yr - 2026))
-    m_real_ss = MOTHER_SS[m_claim_yr] / ((1 + inf_rate) ** (m_claim_yr - 2026))
+    s_real_ss = STEVEN_SS[s_claim_yr] / ((1 + inf_rate) ** (s_claim_yr - 2026))
     
-    c1, c2 = st.columns(2)
-    c1.success(f"**Father (Starts {f_claim_yr})**\n\nNominal: **${FATHER_SS[f_claim_yr]:,.0f}** / yr\n\nReal (2026 $): **${f_real_ss:,.0f}** / yr")
-    c2.success(f"**Mother (Starts {m_claim_yr})**\n\nNominal: **${MOTHER_SS[m_claim_yr]:,.0f}** / yr\n\nReal (2026 $): **${m_real_ss:,.0f}** / yr")
+    st.markdown("---")
+    r1, r2 = st.columns(2)
+    r1.success(f"**Steven (Starts {s_claim_yr})**\n\nNominal: **${STEVEN_SS[s_claim_yr]:,.0f}** / yr\n\nReal (2026 $): **${s_real_ss:,.0f}** / yr")
+    r2.success(f"**Ilona (Current)**\n\nNominal: **${ILONA_SS[2026]:,.0f}** / yr\n\nReal (2026 $): **${ILONA_SS[2026]:,.0f}** / yr")
 
 # -----------------------------------------------------------------------------
 # 5. YEARLY CASH FLOW & DRAWDOWN
