@@ -38,11 +38,17 @@ if 'trust_fund_haircut' not in st.session_state: st.session_state.trust_fund_hai
 if 'cola_rate' not in st.session_state: st.session_state.cola_rate = 2.1
 if 'awi_rate' not in st.session_state: st.session_state.awi_rate = 3.5
 
-# Editable SSA Earnings History for Steven
+# Editable SSA Earnings History for Steven (Constant CAGR from 25k to 110k)
 if 'steven_history_df' not in st.session_state:
+    start_val = 25000
+    end_val = 110000
+    years = 45 # 1980 to 2025
+    cagr = (end_val / start_val) ** (1 / years) - 1
+    earnings_curve = [int(round(start_val * ((1 + cagr) ** i))) for i in range(years + 1)]
+    
     st.session_state.steven_history_df = pd.DataFrame({
         "Year": list(range(1980, 2026)),
-        "Earnings": [110000] * 46
+        "Earnings": earnings_curve
     })
 
 # Spending Targets & Guardrails
@@ -136,7 +142,6 @@ def get_ss_timelines():
         st.session_state.steven_ss_age, st.session_state.steven_future_pct, 
         st.session_state.cola_rate, st.session_state.trust_fund_haircut, st.session_state.awi_rate
     )
-    # Ilona is already claiming, just compound her current amount by COLA
     ilona_ss = {yr: st.session_state.ilona_current_ss * ((1 + (st.session_state.cola_rate / 100)) ** (yr - 2026)) for yr in range(2026, 2090)}
     return steven_ss, ilona_ss
 
@@ -480,11 +485,16 @@ elif selection == "6. Institutional Stress Testing":
     
     st.markdown("---")
     st.subheader("A. Dynamic Asset Allocation (Glide Path)")
+    st.markdown("Simulate moving your portfolio from aggressive equities to conservative bonds as you age by dynamically lowering your expected rate of return over time.")
     g1, g2, g3, g4 = st.columns(4)
     st.session_state.glide_enable = g1.toggle("Enable Glide Path", value=st.session_state.glide_enable)
     st.session_state.glide_start_age = g2.number_input("Start De-Risking Age", value=st.session_state.glide_start_age)
     st.session_state.glide_end_age = g3.number_input("End De-Risking Age", value=st.session_state.glide_end_age)
     st.session_state.usd_glide_reduction = g4.number_input("Yearly Reduction in Return (%)", value=st.session_state.usd_glide_reduction, step=0.001, format="%.3f")
+
+    if st.session_state.glide_enable:
+        total_usd_drop = (st.session_state.glide_end_age - st.session_state.glide_start_age + 1) * st.session_state.usd_glide_reduction
+        st.info(f"**Status:** Active. By age {st.session_state.glide_end_age}, your expected portfolio return will drop from **{st.session_state.usd_market_return:.2f}%** down to **{max(0, st.session_state.usd_market_return - total_usd_drop):.2f}%**.")
 
     st.markdown("---")
     st.subheader("B. Sequence of Returns Risk (SORR)")
